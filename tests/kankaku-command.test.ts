@@ -1447,11 +1447,12 @@ test("'assign <n> <client> <project>' reassigns the row at that position with no
   assert.deepEqual(data.lines, ["assigned task-2 to Globex (globex) · App"]);
 });
 
-test("'assign <task_id> <client>' reassigns by task_id and clears the project", async () => {
+test("'assign <task_id> <client>' notifies a usage error and never writes (the direct form requires a project)", async () => {
   const pi = new FakePi();
   const hubAssign = new FakeHubAssign();
   const catalog = new FakeCatalog();
   catalog.snapshot = ASSIGN_SNAPSHOT;
+  const notified: Array<{ message: string; type?: string }> = [];
 
   registerKankakuCommand(pi as unknown as ExtensionAPI, {
     log: new FakeWorkLog(),
@@ -1461,12 +1462,17 @@ test("'assign <task_id> <client>' reassigns by task_id and clears the project", 
     hubAssign,
   });
 
-  await pi.commands.get("kankaku")!.handler("assign task-9 GLOBEX", assignCtx());
+  await pi.commands
+    .get("kankaku")!
+    .handler(
+      "assign task-9 GLOBEX",
+      assignCtx({ ui: { notify: (message: string, type?: string) => notified.push({ message, type }), setStatus: () => {} } }),
+    );
 
-  assert.deepEqual(hubAssign.assignCalls, [{ taskId: "task-9", payload: { client: "c-globex", project: "" } }]);
+  assert.equal(notified[0]?.type, "error");
+  assert.match(notified[0]?.message ?? "", /assign expects/);
+  assert.deepEqual(hubAssign.assignCalls, []);
   assert.equal(hubAssign.listCalls, 0);
-  const data = pi.entries.at(-1)!.data as { title: string; lines: string[] };
-  assert.deepEqual(data.lines, ["assigned task-9 to Globex (globex)"]);
 });
 
 test("'assign' notifies an error for an unknown client and never writes", async () => {
@@ -1487,7 +1493,7 @@ test("'assign' notifies an error for an unknown client and never writes", async 
   await pi.commands
     .get("kankaku")!
     .handler(
-      "assign task-9 nope",
+      "assign task-9 nope portal",
       assignCtx({ ui: { notify: (message: string, type?: string) => notified.push({ message, type }), setStatus: () => {} } }),
     );
 
@@ -1567,7 +1573,7 @@ test("'assign' notifies an error for a position outside the listed rows", async 
   await pi.commands
     .get("kankaku")!
     .handler(
-      "assign 9 acme",
+      "assign 9 acme portal",
       assignCtx({ ui: { notify: (message: string, type?: string) => notified.push({ message, type }), setStatus: () => {} } }),
     );
 
@@ -1637,7 +1643,7 @@ test("'assign' notifies an error when the row's task_id is no longer in the hub"
   await pi.commands
     .get("kankaku")!
     .handler(
-      "assign task-9 acme",
+      "assign task-9 acme portal",
       assignCtx({ ui: { notify: (message: string, type?: string) => notified.push({ message, type }), setStatus: () => {} } }),
     );
 
@@ -1661,7 +1667,7 @@ test("'assign' notifies an error when no catalog snapshot is available", async (
   await pi.commands
     .get("kankaku")!
     .handler(
-      "assign task-9 acme",
+      "assign task-9 acme portal",
       assignCtx({ ui: { notify: (message: string, type?: string) => notified.push({ message, type }), setStatus: () => {} } }),
     );
 

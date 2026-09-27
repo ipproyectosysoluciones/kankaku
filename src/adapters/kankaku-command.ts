@@ -14,7 +14,9 @@ import type { RegistryClassification } from "../domain/registry-health.ts";
 import type { Catalog, CatalogSnapshot } from "../ports/catalog.ts";
 import type { WorkLog } from "../ports/work-log.ts";
 import {
+  ASSIGN_NO_PROJECT_LABEL,
   buildSyncStatusLines,
+  describeAssignFailure,
   formatAssignResultLines,
   formatAssignRowLabel,
   formatBackfillLines,
@@ -207,8 +209,6 @@ export function buildDoctorLines(deps: KankakuCommandDeps, ctx: ExtensionContext
 const COMMAND_TOKENS = ["all", "tasks", "sessions", "client", "clients", "export", "doctor"];
 /** Only offered when the hub is configured, so completions are unchanged for users without one. */
 const HUB_COMMAND_TOKENS = ["target", "task", "projects", "catalog", "sync", "backfill", "assign"];
-/** The `(no project)` entry in `/kankaku assign`'s interactive project picker, matching `target-picker.ts`'s own label. */
-const ASSIGN_NO_PROJECT_LABEL = "(no project)";
 
 /**
  * `label -> item` options sorted by name, for the interactive assign
@@ -226,17 +226,6 @@ function hubLabelOptions<T extends { name: string; code?: string }>(items: T[]):
   });
 }
 
-/** User-facing wording for a failed [`resolveHubAssignment`], in the same style as the neighbouring `/kankaku client`/`target` errors. */
-function describeAssignFailure(result: Exclude<HubAssignResolution, { kind: "resolved" }>): string {
-  switch (result.kind) {
-    case "client-not-found":
-      return `unknown client: ${result.reference}`;
-    case "project-not-found":
-      return `unknown project: ${result.reference}`;
-    case "project-not-in-client":
-      return `project ${result.reference} does not belong to client ${result.client.name} (${result.client.code})`;
-  }
-}
 const TARGET_TOKENS = ["pick", "clear"];
 const TASK_TOKENS = ["pick", "clear"];
 const CATALOG_TOKENS = ["refresh"];
@@ -665,7 +654,7 @@ export function registerKankakuCommand(pi: ExtensionAPI, deps: KankakuCommandDep
   /** `/kankaku assign`'s no-argument flow: pick a row, then the client, then the project; every step reports through the UI. */
   async function runInteractiveAssign(hubAssign: HubAssign, snapshot: CatalogSnapshot, ctx: ExtensionContext): Promise<void> {
     if (!ctx.hasUI) {
-      notifyError(ctx, new Error("assign expects <n|task_id> <client> [project]"));
+      notifyError(ctx, new Error("assign expects <n|task_id> <client> <project>"));
       return;
     }
 
@@ -727,12 +716,16 @@ export function registerKankakuCommand(pi: ExtensionAPI, deps: KankakuCommandDep
   }
 
   /**
-   * Handle `/kankaku assign [<n|task_id> <client> [project]]`; `rest`
+   * Handle `/kankaku assign [<n|task_id> <client> <project>]`; `rest`
    * excludes the leading `assign` token. With no arguments it is
    * interactive: pick a synced `task_entries` row, then the client, then the
-   * project. With arguments it opens no dialog at all. Only the row's
-   * `client`/`project` pair is ever written — a re-sync never touches it
-   * again (README "Hub (PocketBase)" > "Assignment is create-only").
+   * project. With arguments it opens no dialog at all, and the project is
+   * **required** there: clearing the relation is only ever reached through
+   * the interactive form's explicit "(no project)" option, never by omitting
+   * an argument and silently dropping a project someone meant to keep. Only
+   * the row's `client`/`project` pair is ever written — a re-sync never
+   * touches it again (README "Hub (PocketBase)" > "Assignment is
+   * create-only").
    */
   async function handleAssignCommand(rest: string[], ctx: ExtensionContext): Promise<void> {
     const hubAssign = deps.hubAssign;
@@ -741,8 +734,8 @@ export function registerKankakuCommand(pi: ExtensionAPI, deps: KankakuCommandDep
       return;
     }
 
-    if (rest.length === 1 || rest.length > 3) {
-      notifyError(ctx, new Error("assign expects <n|task_id> <client> [project]"));
+    if (rest.length > 0 && rest.length !== 3) {
+      notifyError(ctx, new Error("assign expects <n|task_id> <client> <project>"));
       return;
     }
 
@@ -808,7 +801,7 @@ export function registerKankakuCommand(pi: ExtensionAPI, deps: KankakuCommandDep
       "'catalog refresh' to force a catalog refresh, 'projects' for per-project totals today ('projects all' for every day), " +
       "'sync' to push pending tasks to the hub ('sync all' for a full re-evaluation, 'sync status' for the watermark/pending count/last error), " +
       "'backfill' to run a full sync and report how many tasks went to Sin determinar, grouped by their old label, " +
-      "'assign' to move an already-synced task entry to another client/project ('assign <n|task_id> <client> [project]' to skip the dialogs). " +
+      "'assign' to move an already-synced task entry to another client/project ('assign <n|task_id> <client> <project>' to skip the dialogs). " +
       "With a hub configured, 'client <name>' instead validates against the catalog (code or name) and sets the target.",
     getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] => {
       const clientMatch = /^client\s+(\S*)$/.exec(argumentPrefix);
