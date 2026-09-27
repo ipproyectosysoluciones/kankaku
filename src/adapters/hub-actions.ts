@@ -5,6 +5,7 @@
  * extracted from `kankaku-command.ts` so the subcommands and the panel can
  * never drift — see odd/tasks/kankaku-panel.md P4.
  */
+import type { HubAssignResolution } from "../domain/hub-assign.ts";
 import type { Client, Project } from "../domain/work-target.ts";
 import type { CatalogSnapshot } from "../ports/catalog.ts";
 import type { SyncedTaskEntryRow } from "./hub-assign.ts";
@@ -121,4 +122,30 @@ export function formatAssignResultLines(input: { taskId: string; client: Client;
   const { client, project } = input;
   const target = project ? `${client.name} (${client.code}) · ${project.name}` : `${client.name} (${client.code})`;
   return [`assigned ${input.taskId} to ${target}`];
+}
+
+/**
+ * The `(no project)` entry in `/kankaku assign`'s interactive project
+ * picker — the explicit choice that clears the row's project relation.
+ * Shared so the panel's assign screen offers the exact same label as the
+ * subcommand (see `adapters/panel/screens/assign.ts`).
+ */
+export const ASSIGN_NO_PROJECT_LABEL = "(no project)";
+
+/**
+ * User-facing wording for a failed `domain/hub-assign.ts#resolveHubAssignment`,
+ * in the same style as the neighbouring `/kankaku client`/`target` errors.
+ * The panel's assign screen resolves its selection through the exact same
+ * resolver as the subcommand, so it must report the exact same failures
+ * with the exact same words.
+ */
+export function describeAssignFailure(result: Exclude<HubAssignResolution, { kind: "resolved" }>): string {
+  switch (result.kind) {
+    case "client-not-found":
+      return `unknown client: ${result.reference}`;
+    case "project-not-found":
+      return `unknown project: ${result.reference}`;
+    case "project-not-in-client":
+      return `project ${result.reference} does not belong to client ${result.client.name} (${result.client.code})`;
+  }
 }

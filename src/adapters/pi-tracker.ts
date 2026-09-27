@@ -18,6 +18,7 @@ import { appendReportEntry, notifyError, registerKankakuCommand } from "./kankak
 import type { KankakuCommandDeps, SyncCommandDeps } from "./kankaku-command.ts";
 import { openKankakuPanel } from "./panel/kankaku-panel.ts";
 import { createAboutScreen } from "./panel/screens/about.ts";
+import { createAssignScreen } from "./panel/screens/assign.ts";
 import { createDoctorScreen } from "./panel/screens/doctor.ts";
 import { createExportScreen } from "./panel/screens/export.ts";
 import { createReportScreen } from "./panel/screens/report.ts";
@@ -370,6 +371,16 @@ export function createPiTracker(pi: ExtensionAPI, deps: PiTrackerDeps): void {
                   refreshIdleStatus,
                   pinReport: (report) => appendReportEntry(pi, ctx, report),
                 }),
+              }
+            : {}),
+          // Present only when the hub is configured — mirrors `sync`'s own
+          // hub-only root-menu row (`domain/panel-model.ts#rootMenu`). Wired
+          // with the same `hubAssign`/`catalog` deps `/kankaku assign`
+          // receives (`commandDeps` above), so panel and subcommand share
+          // one hub reader and one catalog snapshot source.
+          ...(deps.hubAssign
+            ? {
+                assign: createAssignScreen({ hubAssign: deps.hubAssign, catalog: deps.catalog }),
               }
             : {}),
           export: createExportScreen({
